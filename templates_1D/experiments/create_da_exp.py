@@ -2,34 +2,12 @@
 ##      Libraries
 ##########################################################
 
-import os, sys
-from os import fdopen, remove
+import os
 import numpy as np
-from distutils.dir_util import copy_tree
-from tempfile import mkstemp
-from shutil import move, copymode, copyfile
 
-
-############################################################
-###         Functions
-###########################################################
-#
-#   (*) Description: Function which allows to modify lines inside of the different files (json, cpp, etc)
-#
-###########################################################
-def replace(file_path, pattern, subst):
-    # Create temp file
-    fh, abs_path = mkstemp()
-    with fdopen(fh, "w") as new_file:
-        with open(file_path) as old_file:
-            for line in old_file:
-                new_file.write(line.replace(pattern, subst))
-    # Copy the file permissions from the old file to the new file
-    copymode(file_path, abs_path)
-    # Remove original file
-    remove(file_path)
-    # Move new file
-    move(abs_path, file_path)
+from distutils.dir_util import copy_tree # type: ignore
+from shutil import copyfile
+from .utils import get_setup, replace
 
 
 ############################################################################
@@ -44,12 +22,7 @@ def replace(file_path, pattern, subst):
 ##################################################
 
 # Reading the text file with setup
-da_exp_setup = np.genfromtxt("da_exp_setup.txt", delimiter="=", dtype=str)
-
-# Store information as a dictionary
-da_exp = {}
-for i in range(da_exp_setup.shape[0]):
-    da_exp[da_exp_setup[i, 0]] = str(da_exp_setup[i, 1])
+da_exp = get_setup("da_exp_setup.yaml")
 
 # Create a directory with the experiment name
 path_exp = os.path.join(da_exp["path_host"], da_exp["name_exp"])
@@ -70,25 +43,25 @@ with open(path_options, "r") as options:
             replace(
                 path_options,
                 line,
-                "-domain_da_grid_x " + da_exp["domain_da_grid_x"] + "\n",
+                f"-domain_da_grid_x {da_exp["domain_da_grid_x"]} \n"
             )
         # Modify output_interval
         if "-output_interval" in line:
             replace(
                 path_options,
                 line,
-                "-output_interval " + da_exp["output_interval"] + "\n",
+                f"-output_interval {da_exp["output_interval"]} \n",
             )
         # Modify checkpoint_interval
         if "-checkpoint_interval" in line:
             replace(
                 path_options,
                 line,
-                "-checkpoint_interval " + da_exp["checkpoint_interval"] + "\n",
+                f"-checkpoint_interval {da_exp["checkpoint_interval"]} \n",
             )
         # Modify time simulation
         if "-t_pause" in line:
-            replace(path_options, line, "-t_pause " + da_exp["t_first_obs"] + "\n")
+            replace(path_options, line, f"-t_pause {da_exp["t_first_obs"]} \n")
 
 #####################################################################
 ##  Step 3: Create and organize folder for the truth in GARNET
@@ -117,7 +90,7 @@ with open(path_options_truth, "r") as options:
     for line in options:
         # Modify tau0
         if "-tau0" in line:
-            replace(path_options_truth, line, "-tau0 " + da_exp["truth_tau"] + "\n")
+            replace(path_options_truth, line, f"-tau0 {da_exp["truth_tau"]} \n")
 
 
 # os.rename(path_cpp_truth,os.path.join(path_truth,'truth.cpp'))
@@ -141,8 +114,9 @@ if not (os.path.exists(path_obsnet)):
 #########################################################
 
 # Define initial stress ensemble
-ens_tau0 = np.ones((int(da_exp["mem"]))) * float(da_exp["prior_tau"])
-pert = np.random.normal(0, float(da_exp["sigma_tau_X"]), int(da_exp["mem"]))
+ensemble_members = da_exp["mem"]
+ens_tau0 = np.ones((ensemble_members)) * da_exp["prior_tau"]
+pert = np.random.normal(0, da_exp["sigma_tau_X"], ensemble_members)
 ens_tau0_pert = ens_tau0 + pert
 
 
@@ -151,8 +125,8 @@ ens_tau0_pert = ens_tau0 + pert
 ############################################################################
 
 # Create folder ensemble
-for i in range(int(da_exp["mem"])):
-    ens_name = "ens_" + str(i + 1)
+for i in range(ensemble_members):
+    ens_name = f"ens_{i + 1}"
     path_ens = os.path.join(path_exp, ens_name)
     path_exe_ens = os.path.join(path_ens, da_exp["garnet_exe"])
     if not (os.path.exists(path_ens)):
@@ -174,7 +148,7 @@ for i in range(int(da_exp["mem"])):
     ## Change name of the ens_#.cpp
     # os.rename(path_cpp_ens,os.path.join(path_ens,'ens_'+str(i+1)+'.cpp'))
 
-    os.rename(path_exe_ens, os.path.join(path_ens, "ens_" + str(i + 1) + ".exe"))
+    os.rename(path_exe_ens, os.path.join(path_ens, f"ens_{i + 1}.exe"))
 
     # Modify the options file
     path_ens_options = os.path.join(path_ens, "options")
@@ -183,13 +157,13 @@ for i in range(int(da_exp["mem"])):
             # Modify time simulation
             if "-t_pause" in line:
                 replace(
-                    path_ens_options, line, "-t_pause " + da_exp["t_first_obs"] + "\n"
+                    path_ens_options, line, f"-t_pause {da_exp["t_first_obs"]} \n"
                 )
                 # print('replaced for ens '+str(i+1) )
                 # print('new t_pause is: '+str(int(da_exp['t_first_obs'])))
                 # print('new line: '+line)
             if "-tau0" in line:
-                replace(path_ens_options, line, "-tau0 " + str(ens_tau0_pert[i]) + "\n")
+                replace(path_ens_options, line, f"-tau0 {ens_tau0_pert[i]} \n")
 
 
 # Replacing the options file for ens_1 for not having -t_pause=-t_simulation
@@ -204,8 +178,8 @@ copyfile(path_ens_2_options, path_ens_1_options)
 ############################################################################
 
 # Create folder ensemble
-for i in range(int(da_exp["mem"])):
-    ens_name = "ens_" + str(i + 1) + "_forward"
+for i in range(int(ensemble_members)):
+    ens_name = f"ens_{i + 1}_forward"
     path_ens = os.path.join(path_exp, ens_name)
     path_exe_forward = os.path.join(path_ens, da_exp["garnet_exe"])
     if not (os.path.exists(path_ens)):
@@ -229,13 +203,13 @@ for i in range(int(da_exp["mem"])):
                 # Modify tau0
                 if "-tau0" in line:
                     replace(
-                        path_options_ens, line, "-tau0 " + str(ens_tau0_pert[i]) + "\n"
+                        path_options_ens, line, f"-tau0 {ens_tau0_pert[i]} \n"
                     )
 
     # Change name of the ens_#.cpp
     # os.rename(path_cpp_ens,os.path.join(path_ens,'ens_'+str(i+1)+'_forward.cpp'))
     os.rename(
-        path_exe_forward, os.path.join(path_ens, "ens_" + str(i + 1) + "_forward.exe")
+        path_exe_forward, os.path.join(path_ens, f"ens_{i + 1}_forward.exe")
     )
 
     # Modify the options file
@@ -244,4 +218,4 @@ for i in range(int(da_exp["mem"])):
         for line in options:
             # Modify time simulation
             if "-t_pause" in line:
-                replace(path_options, line, "-t_pause " + da_exp["t_simulation"] + "\n")
+                replace(path_options, line, f"-t_pause {da_exp["t_simulation"]} \n")

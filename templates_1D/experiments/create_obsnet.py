@@ -1,29 +1,21 @@
 import numpy as np
 import math
-import os, sys
-from distutils.dir_util import copy_tree
+import os
 import h5py
 import json
 
+from distutils.dir_util import copy_tree # type: ignore
+from .utils import get_setup
 
-# Reading the text file with setup file
-da_exp_setup = np.genfromtxt("da_exp_setup.txt", delimiter="=", dtype=str)
-
-# Store informationas a dictionary
-da_exp = {}
-for i in range(da_exp_setup.shape[0]):
-    da_exp[da_exp_setup[i, 0]] = str(da_exp_setup[i, 1])
-
+experiment_setup = get_setup("da_exp_setup.yaml")
 
 # Reading the text file with obsnet information (interseismic)
-
-path_exp = os.path.join(da_exp["path_host"], da_exp["name_exp"])
+path_exp = os.path.join(experiment_setup["path_host"], experiment_setup["name_exp"])
 path_truth = os.path.join(path_exp, "truth")
 path_list_obsnet = os.path.join(path_truth, "list_checkpoints.txt")
 
 
 # Adding the coseismic observations
-
 list_obsnet = np.genfromtxt(path_list_obsnet)
 
 # load information output.json
@@ -40,21 +32,24 @@ dt_fault = []
 tau_fault = []
 vel_fault = []
 
+t_scale = experiment_setup["t_scale"]
 
 for i in range(len(output_json)):
     # Extracting indexes and corresponding time
     truth_time[i, 0] = output_json[i]["i"]
+    t = output_json[i]["t"]
 
-    if da_exp["t_scale"] == "years":
-        truth_time[i, 1] = output_json[i]["t"] / yr
-    if da_exp["t_scale"] == "hours":
-        truth_time[i, 1] = output_json[i]["t"] / hr
+    if t_scale == "years":
+        truth_time[i, 1] = t / yr
+    if t_scale == "hours":
+        truth_time[i, 1] = t / hr
 
     # Extracting time in the fault
-    if da_exp["t_scale"] == "years":
-        time_fault.append(output_json[i]["t"] / yr)
-    if da_exp["t_scale"] == "hours":
-        time_fault.append(output_json[i]["t"] / hr)
+    if t_scale == "years":
+        time_fault.append(t / yr)
+    if t_scale == "hours":
+        time_fault.append(t / hr)
+
     dt_fault.append(output_json[i]["dt"])
 
     # Extracting shear stress in the fault
@@ -114,12 +109,12 @@ for i in range(len(index_cos_end)):
 index_cos_start_filtered = [
     index_cos_st
     for index_cos_st in index_cos_start
-    if index_cos_st >= int(da_exp["t_first_obs"])
+    if index_cos_st >= experiment_setup["t_first_obs"]
 ]
 index_cos_end_filtered = [
     index_cos_e
     for index_cos_e in index_cos_end
-    if index_cos_e >= int(da_exp["t_first_obs"])
+    if index_cos_e >= experiment_setup["t_first_obs"]
 ]
 
 # print(index_cos_start_filtered)
@@ -140,20 +135,20 @@ time_obs_end = time_obs_end.astype(int)
 
 time_new_obs = list(list_obsnet[:, 0].astype(int))
 
-if da_exp["obs_coseis_start"] == "yes":
+if experiment_setup["obs_coseis_start"] == "yes":
     time_new_obs = time_new_obs + list(time_obs_start)
 
-if da_exp["obs_coseis_end"] == "yes":
+if experiment_setup["obs_coseis_end"] == "yes":
     time_new_obs = time_new_obs + list(time_obs_end)
 
 time_new_obs = sorted(time_new_obs)
 
 index_new_obs = list(list_obsnet[:, 1])
 
-if da_exp["obs_coseis_start"] == "yes":
+if experiment_setup["obs_coseis_start"] == "yes":
     index_new_obs = index_new_obs + list(index_cos_start)
 
-if da_exp["obs_coseis_end"] == "yes":
+if experiment_setup["obs_coseis_end"] == "yes":
     index_new_obs = index_new_obs + list(index_cos_end)
 
 
@@ -168,19 +163,13 @@ new_list_obsnet.astype(int)
 
 np.savetxt(path_list_obsnet, new_list_obsnet)
 
-
 # Copying all the information to the obsnet GARNET folder
-
-# list_obsnet=np.genfromtxt(path_list_obsnet)
-
 list_obsnet = new_list_obsnet
 
-index_list_obsnet = np.where(list_obsnet[:, 0] >= int(da_exp["t_first_obs"]))
+index_list_obsnet = np.where(list_obsnet[:, 0] >= experiment_setup["t_first_obs"])
 
 list_obsnet = list_obsnet[index_list_obsnet]
-
 path_checks = os.path.join(path_truth, "checkpoints")
-
 path_obsnet = os.path.join(path_exp, "obsnet")
 
 for i in range(len(list_obsnet[:, 1])):
@@ -193,15 +182,15 @@ for i in range(len(list_obsnet[:, 1])):
 
 # Copying all the information to the obsnet PDAF folder
 
-pos = int(da_exp["pos"])
-nx = int(da_exp["domain_da_grid_x"])
+pos = experiment_setup["pos"]
+nx = experiment_setup["domain_da_grid_x"]
 
 obs_vect_tau = -999 * np.ones([nx, 1])
 obs_vect_vel = -999 * np.ones([nx - 1, 1])
 obs_vect_theta = -999 * np.ones([1, 1])
 
 path_pdaf_obsnet = os.path.join(
-    da_exp["path_host_da"], "data_" + da_exp["name_exp"], "obsnet"
+    experiment_setup["path_host_da"], f"data_{experiment_setup["name_exp"]}", "obsnet"
 )
 
 # Read the .checkpoint.json and the .h5 file for extracting information
@@ -217,7 +206,7 @@ for i in range(len(list_obsnet[:, 1])):
 
         join_obs_vect = []
 
-        tau0 = float(da_exp["truth_tau"])
+        tau0 = experiment_setup["truth_tau"]
         tau_checkfile = data["chi"]["odes"]["tau"]["base"]["y"]["data"][0]["base"]["0"][
             "data"
         ]
@@ -229,11 +218,11 @@ for i in range(len(list_obsnet[:, 1])):
 
             # Perturbation of the observat`ions
             tau_medium = (
-                tau_medium + np.random.normal(0, float(da_exp["sigma_tau_R"])) * 1e6
+                tau_medium + np.random.normal(0, experiment_setup["sigma_tau_R"]) * 1e6
             )
 
             # Replace medium
-            if da_exp["obs_tau"] == "yes":
+            if experiment_setup["obs_tau"] == "yes":
                 obs_vect_tau[pos] = tau_medium[pos] / 1e6
 
             file_obs_tau = os.path.join(
@@ -261,9 +250,9 @@ for i in range(len(list_obsnet[:, 1])):
             # vel_medium=vel_medium+np.random.normal(0,float(da_exp['sigma_vel_R']))*1e-11 #I need to check the magnitude of this error
 
             # Replace medium
-            if da_exp["obs_vel"] == "yes":
+            if experiment_setup["obs_vel"] == "yes":
                 obs_vect_vel[pos] = np.log10(vel_medium[pos]) + np.random.normal(
-                    0, float(da_exp["sigma_vel_R"])
+                    0, experiment_setup["sigma_vel_R"]
                 )
 
             file_obs_vel = os.path.join(

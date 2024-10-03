@@ -1,34 +1,13 @@
-import os, sys
+import os
 import numpy as np
 import h5py
 import json
-from distutils.dir_util import copy_tree
-from tempfile import mkstemp
-from shutil import move, copymode
-from os import fdopen, remove
 
-
-def replace(file_path, pattern, subst):
-    # Create temp file
-    fh, abs_path = mkstemp()
-    with fdopen(fh, "w") as new_file:
-        with open(file_path) as old_file:
-            for line in old_file:
-                new_file.write(line.replace(pattern, subst))
-    # Copy the file permissions from the old file to the new file
-    copymode(file_path, abs_path)
-    # Remove original file
-    remove(file_path)
-    # Move new file
-    move(abs_path, file_path)
+from .utils import get_setup, replace
 
 
 # Run ensembles with the options files they already have
-
-da_exp_setup = np.genfromtxt("da_exp_setup.txt", delimiter="=", dtype=str)
-da_exp = {}
-for i in range(da_exp_setup.shape[0]):
-    da_exp[da_exp_setup[i, 0]] = str(da_exp_setup[i, 1])
+da_exp = get_setup("da_exp_setup.yaml")
 
 # Reading the observation .txt file
 path_exp = os.path.join(da_exp["path_host"], da_exp["name_exp"])
@@ -37,7 +16,7 @@ path_list_obsnet = os.path.join(path_truth, "list_checkpoints.txt")
 
 list_obsnet = np.genfromtxt(path_list_obsnet)
 
-mem = int(da_exp["mem"])
+ensemble_members = da_exp["mem"]
 
 ##-----------------------------------------------------------------
 #### input_ensembles_pdaf.py
@@ -46,35 +25,31 @@ mem = int(da_exp["mem"])
 
 tau0 = ""
 
-list_ens_time = np.zeros((len(list_obsnet), mem + 1))
+list_ens_time = np.zeros((len(list_obsnet), ensemble_members + 1))
 list_ens_time[:, 0] = list_obsnet[:, 0]
 
-pos = int(da_exp["pos"])
-nx = int(da_exp["domain_da_grid_x"])
+pos = da_exp["pos"]
+nx = da_exp["domain_da_grid_x"]
 ens_vect_tau = -999 * np.ones([nx, 1])
 ens_vect_vel = -999 * np.ones([nx - 1, 1])
 ens_vect_theta = -999 * np.ones([1, 1])
 
 path_pdaf_input = os.path.join(
-    da_exp["path_host_da"], "data_" + da_exp["name_exp"], "input"
+    da_exp["path_host_da"], f"data_{da_exp["name_exp"]}", "input"
 )
 
 
 for j in range(len(list_obsnet) - 1):
 
-    for i in range(mem):
+    for i in range(ensemble_members):
 
-        ens_name = "ens_" + str(i + 1)
+        ens_name = f"ens_{i + 1}"
         path_ens = os.path.join(path_exp, ens_name)
         os.chdir(path_ens)
 
         print("Running " + ens_name)
         os.system(
-            "./"
-            + ens_name
-            + ".exe -options_file options > logout_"
-            + str(int(list_obsnet[j, 0]))
-            + ".txt 2> logerr.txt"
+            f"./{ens_name}.exe -options_file options > logout_{int(list_obsnet[j, 0])}.txt 2> logerr.txt"
         )
         print("Finished running " + ens_name)
 
@@ -90,6 +65,7 @@ for j in range(len(list_obsnet) - 1):
         # print('tau0 for '+ens_name+': '+str(tau0)+' MPa')
 
         path_ens_options = os.path.join(path_ens, "options")
+        tau0 = 0
         with open(path_ens_options, "r") as options_ens:
             for line in options_ens:
                 if "-tau0" in line:
@@ -97,7 +73,7 @@ for j in range(len(list_obsnet) - 1):
                     tau0 = tau0[1]
                     tau0 = float(tau0)
 
-        print("tau0 for " + ens_name + ": " + str(tau0) + " MPa")
+        print(f"tau0 for {ens_name}: {tau0} MPa")
 
         # Obtaining last check point
         path_checks = os.path.join(path_ens, "checkpoints")
@@ -115,26 +91,20 @@ for j in range(len(list_obsnet) - 1):
             for line in options:
                 if "-t_pause" in line:
                     replace(
-                        path_options, line, "-t_pause " + str(int(next_time)) + "\n"
+                        path_options, line, f"-t_pause {int(next_time)} \n"
                     )
                 if "#-restart_checkpoint" in line:
                     replace(
-                        path_options,
-                        line,
-                        "-restart_checkpoint " + str(int(last_check)) + "\n",
+                        path_options, line, f"-restart_checkpoint {int(last_check)} \n"
                     )
                 if "-restart_checkpoint" in line:
                     replace(
                         path_options,
                         line,
-                        "-restart_checkpoint " + str(int(last_check)) + "\n",
+                        f"-restart_checkpoint {int(last_check)} \n"
                     )
         print(
-            "Options file updated for "
-            + ens_name
-            + "for time "
-            + str(int(next_time))
-            + "years"
+            f"Options file updated for {ens_name} for time {int(next_time)} years"
         )
 
         # Extrating information for PDAF
@@ -155,9 +125,7 @@ for j in range(len(list_obsnet) - 1):
                 # Replace medium
                 ens_vect_tau[:, 0] = tau_medium[:] / 1e6
 
-                print(
-                    "Input tau for " + ens_name + ": " + str(ens_vect_tau[pos]) + " MPa"
-                )
+                print(f"Input tau for {ens_name}: {ens_vect_tau[pos]} MPa")
 
                 file_ens_input_tau = os.path.join(
                     path_pdaf_input,
@@ -184,9 +152,7 @@ for j in range(len(list_obsnet) - 1):
                 # Replace medium
                 ens_vect_vel[:, 0] = np.log10(vel_medium[:])
 
-                print(
-                    "Input vel for " + ens_name + ": " + str(ens_vect_vel[pos]) + " MPa"
-                )
+                print(f"Input vel for {ens_name}: {ens_vect_vel[pos]} MPa")
 
                 file_ens_input_vel = os.path.join(
                     path_pdaf_input,
@@ -280,8 +246,8 @@ for j in range(len(list_obsnet) - 1):
 
     # Update information in the checkpoint data from PDAF outputs
 
-    for i in range(mem):
-        ens_name = "ens_" + str(i + 1)
+    for i in range(ensemble_members):
+        ens_name = f"ens_{i + 1}"
         path_ens = os.path.join(path_exp, ens_name)
         path_checks = os.path.join(path_ens, "checkpoints")
 
@@ -289,11 +255,7 @@ for j in range(len(list_obsnet) - 1):
         last_check = int(list_ens_time[j, i + 1])
 
         print(
-            "Updating stress for "
-            + ens_name
-            + " for time:"
-            + str(last_check)
-            + " years"
+            f"Updating stress for {ens_name} for time: {last_check} years"
         )
 
         # Read output file PDAF
@@ -379,7 +341,7 @@ for j in range(len(list_obsnet) - 1):
                     tau0 = tau0[1]
                     tau0 = float(tau0)
 
-        print("tau0 for " + ens_name + ": " + str(tau0) + " MPa")
+        print(f"tau0 for {ens_name}: {tau0} MPa")
 
         # Write in the checkpoint data
         path_check_json = os.path.join(path_checks, str(last_check), "_checkpoint.json")
@@ -399,7 +361,7 @@ for j in range(len(list_obsnet) - 1):
                 tau_update = (tau_update - tau0) * 1e6
                 tau_medium[:] = tau_update
                 data_tau = hdf["data"]
-                data_tau[...] = tau_medium
+                data_tau[...] = tau_medium  # type: ignore
 
         # Updating information velocity
 
@@ -424,7 +386,7 @@ for j in range(len(list_obsnet) - 1):
                 # Replace medium
                 vel_medium[:] = vel_update
                 data_vel = hdf["data"]
-                data_vel[...] = vel_medium
+                data_vel[...] = vel_medium  # type: ignore
 
         # Updating information theta
 
@@ -447,9 +409,5 @@ for j in range(len(list_obsnet) - 1):
             json.dump(data, json_file)
 
         print(
-            "Finishing update for "
-            + ens_name
-            + " for time:"
-            + str(last_check)
-            + " years"
+            f"Finishing update for {ens_name} for time: {last_check} years"
         )

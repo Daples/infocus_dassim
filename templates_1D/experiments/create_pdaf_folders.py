@@ -1,13 +1,10 @@
-import os, sys
-import numpy as np
-from distutils.dir_util import copy_tree
+import os
+
+from distutils.dir_util import copy_tree # type: ignore
+from .utils import get_setup
 
 # Reading the text file with setup
-da_exp_setup = np.genfromtxt("da_exp_setup.txt", delimiter="=", dtype=str)
-# Store information as a dictionary
-da_exp = {}
-for i in range(da_exp_setup.shape[0]):
-    da_exp[da_exp_setup[i, 0]] = str(da_exp_setup[i, 1])
+da_exp = get_setup("da_exp_setup.yaml")
 
 # Create a directory with the experiment name
 path_exp = os.path.join(da_exp["path_host_da"], da_exp["name_exp"])
@@ -15,7 +12,7 @@ if not (os.path.exists(path_exp)):
     copy_tree(da_exp["path_template_da"], path_exp)
 
 # Create a directory with the data for the experiment
-path_data = os.path.join(da_exp["path_host_da"], "data_" + da_exp["name_exp"])
+path_data = os.path.join(da_exp["path_host_da"], f"data_{da_exp["name_exp"]}")
 if not (os.path.exists(path_data)):
     copy_tree(da_exp["path_template_data"], path_data)
 
