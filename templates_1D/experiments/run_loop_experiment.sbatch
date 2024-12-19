@@ -8,6 +8,7 @@
 #SBATCH --output=%j.out
 #SBATCH --error=%j.err
 #SBATCH --partition=genoa
+
 # -- execute runs --
 
 DIR=/home/montero/infocus_dassim/experiments/experiments_1d/enkf_50_pub_01_fast_right_david/
